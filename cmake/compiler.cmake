@@ -1,5 +1,7 @@
 include(cmake/utils.cmake)
+include(CheckCXXCompilerFlag)
 
+check_cxx_compiler_flag("-Wno-gnu-alignof-expression" COMPILER_SUPPORTS_NO_GNU_ALIGNOF_EXPRESSION)
 #
 # Check if the same compile family is used for both C and CXX
 #
@@ -279,7 +281,9 @@ macro(enable_tnt_compile_flags)
         add_compile_flags("CXX"
             "-Wno-invalid-offsetof"
         )
-        add_compile_flags("C;CXX" "-Wno-gnu-alignof-expression")
+        if(COMPILER_SUPPORTS_NO_GNU_ALIGNOF_EXPRESSION)
+            add_compile_options("-Wno-gnu-alignof-expression")
+        endif()
     endif()
 
     if (CMAKE_COMPILER_IS_GNUCC)

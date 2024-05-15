@@ -41,6 +41,9 @@ are written to globals.
 In the new behavior, they're written to a variable scope attached to the console
 session.
 
+Also, a couple of built-in modules are added into the initial console variable
+scope in the new behavior.
+
 https://tarantool.io/compat/console_session_scope_vars
 ]]
 
@@ -51,6 +54,8 @@ compat.add_option({
     brief = CONSOLE_SESSION_SCOPE_VARS_BRIEF,
     action = function() end,
 })
+
+local M = {}
 
 --
 -- Default output handler set to YAML for backward
@@ -174,7 +179,7 @@ local function parse_output(value)
     return nil, fmt, opts, local_eos
 end
 
-local function set_default_output(value)
+function M.set_default_output(value)
     if value == nil then
         error("Nil output value passed")
     end
@@ -186,7 +191,7 @@ local function set_default_output(value)
     default_output_format["opts"] = opts
 end
 
-local function get_default_output(...)
+function M.get_default_output(...)
     local args = ...
     if args ~= nil then
         error("Arguments provided while prohibited")
@@ -236,7 +241,7 @@ end
 --
 -- Set/get current console EOS value from
 -- currently active output format.
-local function console_eos(eos_value)
+function M.eos(eos_value)
     if not eos_value then
         return tostring(current_eos())
     end
@@ -268,7 +273,7 @@ end
 --
 -- Set delimiter
 --
-local function delimiter(delim)
+function M.delimiter(delim)
     local self = fiber.self().storage.console
     if self == nil then
         error("console.delimiter(): need existing console")
@@ -288,7 +293,7 @@ local function set_delimiter(_storage, value)
         return error('Can not install delimiter for net box sessions')
     end
     value = value or ''
-    return delimiter(value)
+    return M.delimiter(value)
 end
 
 local function set_language(storage, value)
@@ -415,6 +420,60 @@ local function table_pack(...)
     return {n = select('#', ...), ...}
 end
 
+local initial_env
+
+-- Get initial console environment.
+--
+-- If the console_session_scope_vars compat option is set to new,
+-- each console session has its own variable scope (environment)
+-- created before execution of a first command.
+--
+-- This environment initially contains a couple of frequently used
+-- built-in modules. A non-local variable assignment within a
+-- command modifies the environment.
+--
+-- The initial environment is returned by console.initial_env().
+-- It is a table that may be modified by a user or completely
+-- replaced with a new table using console.set_initial_env().
+-- These calls don't affect existing console sessions, only ones
+-- that are created afterwards.
+function M.initial_env()
+    if initial_env == nil then
+        initial_env = {
+            clock     = require('clock'),
+            compat    = require('compat'),
+            config    = require('config'),
+            datetime  = require('datetime'),
+            decimal   = require('decimal'),
+            fiber     = require('fiber'),
+            fio       = require('fio'),
+            fun       = require('fun'),
+            json      = require('json'),
+            log       = require('log'),
+            msgpack   = require('msgpack'),
+            popen     = require('popen'),
+            uuid      = require('uuid'),
+            varbinary = require('varbinary'),
+            yaml      = require('yaml'),
+        }
+    end
+    return initial_env
+end
+
+-- Set initial console environment.
+--
+-- Accepts a table or a nil value. If the value is nil, the
+-- initial environment is reset to a default value.
+--
+-- See console.initial_env() for details.
+function M.set_initial_env(env)
+    if type(env) ~= 'table' and type(env) ~= 'nil' then
+        error(('console.set_initial_env: expected table or nil, got %s'):format(
+            type(env)), 0)
+    end
+    initial_env = env
+end
+
 local function create_env_on_demand(storage)
     if compat.console_session_scope_vars:is_old() then
         return
@@ -422,7 +481,7 @@ local function create_env_on_demand(storage)
     if storage.env ~= nil then
         return
     end
-    storage.env = setmetatable({}, {
+    storage.env = setmetatable(table.copy(M.initial_env()), {
         -- Read from globals if there is no local variable.
         __index = _G,
     })
@@ -475,7 +534,7 @@ local function local_eval(storage, line)
     return format(unpack(res, 1, res.n))
 end
 
-local function eval(line)
+function M.eval(line)
     return local_eval(box.session.storage, line)
 end
 
@@ -859,7 +918,7 @@ local function repl(self)
     fiber.self().storage.console = nil
 end
 
-local function on_start(foo)
+function M.on_start(foo)
     if foo == nil or type(foo) == 'function' then
         repl_mt.__index.on_start = foo
         return
@@ -867,7 +926,7 @@ local function on_start(foo)
     error('Wrong type of on_start hook: ' .. type(foo))
 end
 
-local function on_client_disconnect(foo)
+function M.on_client_disconnect(foo)
     if foo == nil or type(foo) == 'function' then
         repl_mt.__index.on_client_disconnect = foo
         return
@@ -878,7 +937,7 @@ end
 --
 --
 --
-local function ac(yes_no)
+function M.ac(yes_no)
     local self = fiber.self().storage.console
     if self == nil then
         error("console.ac(): need existing console")
@@ -890,7 +949,7 @@ end
 -- Start REPL on stdin
 --
 local started = false
-local function start()
+function M.start()
     if started then
         error("console is already started")
     end
@@ -935,7 +994,7 @@ end
 --
 -- Connect to remote instance
 --
-local function connect(uri, opts)
+function M.connect(uri, opts)
     opts = opts or {}
 
     local self = fiber.self().storage.console
@@ -1035,7 +1094,7 @@ end
 --
 -- Start admin console
 --
-local function listen(uri)
+function M.listen(uri)
     local host, port
     if uri == nil then
         host = 'unix/'
@@ -1057,17 +1116,6 @@ local function listen(uri)
     return s
 end
 
-return {
-    start = start;
-    eval = eval;
-    delimiter = delimiter;
-    set_default_output = set_default_output;
-    get_default_output = get_default_output;
-    eos = console_eos;
-    ac = ac;
-    connect = connect;
-    listen = listen;
-    on_start = on_start;
-    on_client_disconnect = on_client_disconnect;
-    completion_handler = internal.completion_handler;
-}
+M.completion_handler = internal.completion_handler
+
+return M

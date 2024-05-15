@@ -710,23 +710,28 @@ verify_decode_header_args(lua_State *L, const char *func_name,
 static int
 lua_decode_array_header(lua_State *L)
 {
-	const char *func_name = "msgpack.decode_array_header";
-	const char *data;
-	uint32_t cdata_type;
-	ptrdiff_t size;
-	verify_decode_header_args(L, func_name, &data, &cdata_type, &size);
+    const char *func_name = "msgpack.decode_array_header";
+    const char *data = NULL;
+    uint32_t cdata_type = 0;
+    ptrdiff_t size;
 
-	if (mp_typeof(*data) != MP_ARRAY)
-		return luaL_error(L, "%s: unexpected msgpack type", func_name);
+    // Check if verify_decode_header_args succeeded
+    if (verify_decode_header_args(L, func_name, &data, &cdata_type, &size) != 0) {
+        // If it fails, it has already handled the error via luaL_error
+        return luaL_error(L, "Failed to initialize data properly.");
+    }
 
-	if (mp_check_array(data, data + size) > 0)
-		return luaL_error(L, "%s: unexpected end of buffer", func_name);
+    if (mp_typeof(*data) != MP_ARRAY)
+        return luaL_error(L, "%s: unexpected msgpack type", func_name);
 
-	uint32_t len = mp_decode_array(&data);
+    if (mp_check_array(data, data + size) > 0)
+        return luaL_error(L, "%s: unexpected end of buffer", func_name);
 
-	lua_pushinteger(L, len);
-	*(const char **) luaL_pushcdata(L, cdata_type) = data;
-	return 2;
+    uint32_t len = mp_decode_array(&data);
+
+    lua_pushinteger(L, len);
+    *(const char **) luaL_pushcdata(L, cdata_type) = data;
+    return 2;
 }
 
 /**
@@ -737,10 +742,14 @@ static int
 lua_decode_map_header(lua_State *L)
 {
 	const char *func_name = "msgpack.decode_map_header";
-	const char *data;
-	uint32_t cdata_type;
+	const char *data = NULL;
+	uint32_t cdata_type = 0;
 	ptrdiff_t size;
-	verify_decode_header_args(L, func_name, &data, &cdata_type, &size);
+	// Check if verify_decode_header_args succeeded
+    if (verify_decode_header_args(L, func_name, &data, &cdata_type, &size) != 0) {
+        // If it fails, it has already handled the error via luaL_error
+        return luaL_error(L, "Failed to initialize data properly.");
+    }
 
 	if (mp_typeof(*data) != MP_MAP)
 		return luaL_error(L, "%s: unexpected msgpack type", func_name);
