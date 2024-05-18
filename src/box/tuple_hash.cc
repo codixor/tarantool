@@ -308,18 +308,23 @@ tuple_hash_field(uint32_t *ph1, uint32_t *pcarry, const char **field,
 	 * double and decimal have the same hash.
 	 */
 	if (type == FIELD_TYPE_DOUBLE) {
-		double value;
+		double value = 0;
 		/*
 		 * This will only fail if the mp_type is not numeric, which is
 		 * impossible here (see field_mp_plain_type_is_compatible).
 		 */
-		if (mp_read_double_lossy(&f, &value) == -1)
-			unreachable();
-		char *double_msgpack_end = mp_encode_double(buf, value);
-		size = double_msgpack_end - buf;
-		assert(size <= sizeof(buf));
-		PMurHash32_Process(ph1, pcarry, buf, size);
-		return size;
+		#ifdef NDEBUG
+			mp_read_double_lossy(&f, &value);
+		#else
+			int read_result = mp_read_double_lossy(&f, &value);
+    		assert(read_result != -1);
+#endif
+
+			char *double_msgpack_end = mp_encode_double(buf, value);
+			size = double_msgpack_end - buf;
+			assert(size <= sizeof(buf));
+			PMurHash32_Process(ph1, pcarry, buf, size);
+			return size;
 	}
 
 	switch (mp_typeof(**field)) {
